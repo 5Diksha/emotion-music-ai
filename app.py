@@ -84,7 +84,6 @@ for key, val in {
 
 # ---------------- LOGIN ----------------
 if not st.session_state.logged_in:
-
     if st.session_state.page == "login":
         st.title("🔐 Login")
 
@@ -92,9 +91,13 @@ if not st.session_state.logged_in:
         p = st.text_input("Password", type="password")
 
         if st.button("Login"):
-            if login(u, p):
+            username = u.strip().lower()
+            password = p.strip()
+
+            if login(username, password):
                 st.session_state.logged_in = True
-                st.session_state.username = u
+                st.session_state.username = username
+                st.success("Login successful!")
                 st.rerun()
             else:
                 st.error("Invalid credentials")
@@ -103,7 +106,7 @@ if not st.session_state.logged_in:
             st.session_state.page = "signup"
             st.rerun()
 
-    else:
+    elif st.session_state.page == "signup":
         st.title("📝 Signup")
 
         u = st.text_input("Create Username")
@@ -193,9 +196,6 @@ else:
     import subprocess
 
     if st.button("🎥 Detect Emotion"):
-        st.warning("⚠️ Emotion detection works only on local system")
-        st.info("Using selected mood instead")
-        st.session_state.detected_mood = mood
         try:
             emotion_python = "emotion_env\\Scripts\\python.exe"
 
@@ -205,16 +205,23 @@ else:
                 text=True
             )
 
-            st.write("DEBUG:", result)  # optional, can remove later
+            detected = "Unknown"
 
-            detected = result.split("Final Emotion:")[-1].strip()
+            for line in result.split("\n"):
+                if "Final Emotion:" in line:
+                    detected = line.split(":")[-1].strip()
+
+            if detected in ["Unknown", "CameraError", ""]:
+                st.warning("⚠️ Using selected mood instead")
+                detected = mood
 
             st.session_state.detected_mood = detected
             st.success(f"Detected: {detected}")
 
-        except subprocess.CalledProcessError as e:
+        except Exception as e:
             st.error("Emotion detection failed")
-            st.text(e.output)
+            st.warning("Using selected mood instead")
+            st.session_state.detected_mood = mood
 
     if st.session_state.detected_mood:
         mood = st.session_state.detected_mood
@@ -222,7 +229,35 @@ else:
     if st.button("🎵 Get Recommendations"):
         query = build_query(mood, language, decade, search_query, trending)
 
-        save_history(st.session_state.username, query, language, decade)
+        def save_history(username, query, language, decade):
+            try:
+                if not os.path.exists("history.csv"):
+                    pd.DataFrame(columns=[
+                        "username",
+                        "query",
+                        "language",
+                        "decade",
+                        "timestamp"
+                    ]).to_csv("history.csv", index=False)
+
+                df = pd.read_csv("history.csv")
+
+                new = pd.DataFrame([{
+                    "username": username,
+                    "query": query,
+                    "language": language,
+                    "decade": decade,
+                    "timestamp": datetime.datetime.now()
+                }])
+
+                updated = pd.concat([df, new], ignore_index=True)
+
+                updated.to_csv("history.csv", index=False)
+
+            except Exception as e:
+                st.error(f"History saving error: {e}")
+
+        save_history(st.session_state.get("username", "Guest"), query, language, decade)
 
         songs, playlists = get_recommendations(query)
 
